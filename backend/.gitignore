@@ -1,0 +1,12 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Python Cache (covers backend, client, and queues)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables (Keep API keys safe)
+.env
