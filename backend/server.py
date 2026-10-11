@@ -19,10 +19,18 @@ from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
 from client.rq_client import queue
 from queues.worker import process_query
+import redis
 
 load_dotenv()
 
 app = FastAPI()
+
+# Initialize the Redis client
+redis_client = redis.Redis(
+    host=os.getenv("RQ_HOST", "redis"), 
+    port=int(os.getenv("RQ_PORT", 6379)), 
+    decode_responses=True
+)
 
 # Allow Next.js frontend to interact with FastAPI
 app.add_middleware(
@@ -110,10 +118,20 @@ def get_result(job_id: str):
 
 @app.delete("/session/{session_id}")
 def logout_and_cleanup(session_id: str):
-    # Wipe all vector embeddings associated with this session's namespace
+    # 1. Wipe all vector embeddings associated with this session's namespace
     try:
         index.delete(delete_all=True, namespace=session_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete index namespace: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete Pinecone namespace: {str(e)}")
 
-    return {"status": "success", "message": f"Namespace {session_id} flushed from Pinecone"}
+    # 2. Wipe the conversational memory associated with this session from Redis
+    try:
+        # LangChain's RedisChatMessageHistory uses the "message_store:" prefix by default
+        redis_client.delete(f"message_store:{session_id}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete Redis chat history: {str(e)}")
+
+    return {
+        "status": "success", 
+        "message": f"Session {session_id} completely flushed from Pinecone and Redis"
+    }

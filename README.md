@@ -8,23 +8,24 @@ The architecture is built for concurrent multi-user environments. It utilizes Re
 
 - **Multi-Format Support:** Ingests PDF, DOCX, TXT, Markdown, and CSV files dynamically.
 - **Isolated User Sessions:** Every uploaded document is assigned a unique session ID and embedded into an isolated Pinecone namespace.
+- **Stateful Conversational Memory:** Maintains chat history context across stateless parallel workers using Redis. Employs a sliding memory window so the AI remembers previous questions and answers during your active session.
 - **True Parallel Processing:** Employs RQ (Redis Queue) and multiple background workers to process simultaneous queries from different users without blocking the main API thread.
-- **Auto-Teardown:** Ending a session automatically triggers a backend cleanup, purging the user's isolated vector embeddings from the Pinecone database to maintain privacy and save storage.
-- **Premium Glassmorphism UI:** Fluid, 60fps animations, intelligent auto-scrolling, and responsive frosted-glass aesthetics.
+- **Auto-Teardown:** Ending a session automatically triggers a backend cleanup, purging the user's isolated vector embeddings from Pinecone and wiping the chat history from Redis to maintain privacy and save storage.
+- **Premium Glassmorphism UI:** Fluid, 60fps animations, intelligent auto-scrolling, beautiful markdown rendering, and responsive frosted-glass aesthetics.
 
 ## 🛠️ Tech Stack
 
 **Frontend:**
 - Next.js (App Router, Node 20+)
-- Tailwind CSS & Framer Motion
-- Lucide React
+- Tailwind CSS v4 & Typography Plugin
+- Framer Motion & Lucide React
 
 **Backend:**
 - Python 3.11 & FastAPI
 - LangChain & Pinecone (Vector Database)
 - Google Generative AI Embeddings (Gemini-embedding-001)
-- OpenAI SDK (Routing to Gemini 2.5 Flash)
-- Redis & RQ (Task Queuing & Background Workers)
+- OpenAI SDK (Routing to Gemini 3.5 Flash-Lite)
+- Redis & RQ (Task Queuing, Background Workers, & Session Memory)
 - Docker Compose (Container Orchestration)
 
 ---
@@ -64,7 +65,14 @@ FASTAPI_PORT=8000
 # Note: Keep RQ_HOST=redis if using Docker. Change to 127.0.0.1 if running manually.
 RQ_HOST=redis
 RQ_PORT=6379
+
+# Chat Memory Config
+# Defines how many past user-AI interactions the bot remembers for context
+CHAT_MEMORY_WINDOW=3
 ```
+
+> **🧠 How Memory Configuration Works:**
+> The `CHAT_MEMORY_WINDOW` defines the sliding window of conversational memory. A value of `3` means the AI will remember the last 3 questions you asked and its last 3 answers (6 messages total). This prevents context-window token overflow while keeping the AI aware of the current conversation thread.
 
 ---
 
@@ -76,11 +84,11 @@ Open a single terminal in the root folder and run:
 ```bash
 docker compose up --build --scale worker=3
 ```
-* **Frontend UI:** Available at `http://localhost:3000`
-* **Backend API:** Available at `http://localhost:8000`
-* **Parallelism:** The `--scale worker=3` flag spawns three identical containerized workers that listen to the Redis queue simultaneously. 
+- **Frontend UI:** Available at `http://localhost:3000`
+- **Backend API:** Available at `http://localhost:8000`
+- **Parallelism:** The `--scale worker=3` flag spawns three identical containerized workers that listen to the Redis queue simultaneously. 
 
-To shut down the architecture cleanly, press `Ctrl+C`, then run `docker compose down`.
+To shut down the architecture cleanly (without corrupting container data), press `Ctrl+C` once, then run `docker compose down`.
 
 ---
 
