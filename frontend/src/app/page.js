@@ -5,10 +5,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, FileText, LogOut, FileUp, Sparkles, User, Loader2, Library, FileSearch } from "lucide-react";
 
 const BACKEND_URL = "http://localhost:8000";
+const SUPPORTED_EXTENSIONS = ["pdf", "docx", "txt", "md", "csv"];
 
 export default function DocAssistChat() {
   const [sessionId, setSessionId] = useState(null);
   const [file, setFile] = useState(null);
+  const [uploadError, setUploadError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState([]);
@@ -25,9 +27,31 @@ export default function DocAssistChat() {
     }
   }, [messages, loading]);
 
+  const handleFileChange = (e) => {
+    setUploadError("");
+    const selectedFile = e.target.files?.[0];
+    
+    if (!selectedFile) {
+      setFile(null);
+      return;
+    }
+
+    const fileExtension = selectedFile.name.split('.').pop().toLowerCase();
+    
+    if (!SUPPORTED_EXTENSIONS.includes(fileExtension)) {
+      setUploadError(`Unsupported format (.${fileExtension}). Please use PDF, DOCX, TXT, MD, or CSV.`);
+      setFile(null);
+      e.target.value = null; // Clear the input
+      return;
+    }
+
+    setFile(selectedFile);
+  };
+
   const handleUpload = async () => {
     if (!file) return;
     setUploading(true);
+    setUploadError("");
     const formData = new FormData();
     formData.append("file", file);
 
@@ -36,10 +60,17 @@ export default function DocAssistChat() {
         method: "POST",
         body: formData,
       });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to upload document");
+      }
+      
       const data = await res.json();
       setSessionId(data.session_id);
     } catch (err) {
       console.error("Upload failed", err);
+      setUploadError(err.message || "An error occurred during upload.");
     } finally {
       setUploading(false);
     }
@@ -99,6 +130,7 @@ export default function DocAssistChat() {
       setSessionId(null);
       setMessages([]);
       setFile(null);
+      setUploadError("");
     }
   };
 
@@ -146,21 +178,37 @@ export default function DocAssistChat() {
                     <FileUp className="w-10 h-10 text-blue-400" />
                   </div>
                   <h2 className="text-2xl font-bold mb-2">Upload Knowledge</h2>
-                  <p className="text-zinc-400 text-sm mb-8">
-                    Initialize an isolated DocAssist workspace by uploading a PDF.
+                  <p className="text-zinc-400 text-sm mb-6">
+                    Initialize an isolated DocAssist workspace by uploading a document. <br/>
+                    <span className="text-xs text-blue-400 font-semibold mt-2 block tracking-wide uppercase">
+                      Supported: PDF, DOCX, TXT, MD, CSV
+                    </span>
                   </p>
+
+                  {uploadError && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -10 }} 
+                      animate={{ opacity: 1, y: 0 }} 
+                      className="w-full mb-4 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs text-left flex items-center gap-2"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                      {uploadError}
+                    </motion.div>
+                  )}
 
                   <label className="w-full relative group cursor-pointer">
                     <input
                       type="file"
-                      accept="application/pdf"
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      accept=".pdf,.docx,.txt,.md,.csv"
+                      onChange={handleFileChange}
                       className="hidden"
                     />
-                    <div className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl bg-black/20 group-hover:bg-white/5 group-hover:border-blue-500/50 transition-all duration-300 flex items-center gap-4">
-                      <FileText className={`w-6 h-6 ${file ? "text-blue-400" : "text-zinc-500"}`} />
-                      <span className="text-sm text-zinc-300 truncate">
-                        {file ? file.name : "Select a PDF file..."}
+                    <div className={`w-full p-4 border-2 border-dashed rounded-xl bg-black/20 transition-all duration-300 flex items-center gap-4
+                      ${file ? "border-blue-500/50 bg-blue-500/5" : "border-white/10 group-hover:bg-white/5 group-hover:border-blue-500/50"}
+                    `}>
+                      <FileText className={`w-6 h-6 shrink-0 ${file ? "text-blue-400" : "text-zinc-500"}`} />
+                      <span className={`text-sm truncate ${file ? "text-blue-100 font-medium" : "text-zinc-400"}`}>
+                        {file ? file.name : "Select a document file..."}
                       </span>
                     </div>
                   </label>

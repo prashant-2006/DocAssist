@@ -5,7 +5,14 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PyPDFLoader
+
+# Import the expanded suite of LangChain document loaders
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    TextLoader,
+    CSVLoader,
+    Docx2txtLoader
+)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
@@ -39,17 +46,31 @@ class ChatRequest(BaseModel):
     query: str
 
 @app.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...)):
     session_id = str(uuid.uuid4())
     
-    # Save file temporarily to disk for PyPDFLoader
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+    # Extract file extension to determine the correct LangChain loader
+    file_extension = file.filename.split(".")[-1].lower()
+    
+    # Save file temporarily to disk using the correct extension
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as tmp:
         content = await file.read()
         tmp.write(content)
         tmp_path = tmp.name
 
     try:
-        loader = PyPDFLoader(tmp_path)
+        # Route to the appropriate loader based on file extension
+        if file_extension == "pdf":
+            loader = PyPDFLoader(tmp_path)
+        elif file_extension in ["txt", "md"]:
+            loader = TextLoader(tmp_path, encoding="utf-8")
+        elif file_extension == "csv":
+            loader = CSVLoader(tmp_path, encoding="utf-8")
+        elif file_extension == "docx":
+            loader = Docx2txtLoader(tmp_path)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file format: {file_extension}")
+
         docs = loader.load()
         
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=200)
