@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, FileText, LogOut, FileUp, Sparkles, User, Loader2, Library, FileSearch } from "lucide-react";
+import ReactMarkdown from "react-markdown"; // <-- Added import
 
 const BACKEND_URL = "http://localhost:8000";
 const SUPPORTED_EXTENSIONS = ["pdf", "docx", "txt", "md", "csv"];
@@ -270,7 +271,16 @@ export default function DocAssistChat() {
                             ? "bg-blue-600/20 border border-blue-500/20 text-blue-50 rounded-tr-sm" 
                             : "bg-black/40 border border-white/5 text-zinc-200 rounded-tl-sm backdrop-blur-md"
                         }`}>
-                          {m.text}
+                          {m.sender === "user" ? (
+                            m.text
+                          ) : (
+                            /* Applied Tailwind Typography plugin classes here */
+                            <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10">
+                              <ReactMarkdown>
+                                {m.text}
+                              </ReactMarkdown>
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     ))}

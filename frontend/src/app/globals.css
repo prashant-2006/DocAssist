@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @layer utilities {
   /* Custom thin scrollbar for a premium look */
