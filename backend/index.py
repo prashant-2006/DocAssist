@@ -19,7 +19,7 @@ print(f"📄 Total pages loaded: {len(docs)}")
 
 # Split
 print("\n✂ Splitting PDF into chunks...")
-text_splitter = RecursiveCharacterTextSplitter(chunk_size = 500, chunk_overlap = 200)
+text_splitter = RecursiveCharacterTextSplitter(chunk_size = 1000, chunk_overlap = 300)
 chunks = text_splitter.split_documents(documents = docs)
 print(f"✅ Text splitting completed!")
 print(f"🧩 Total chunks created: {len(chunks)}")

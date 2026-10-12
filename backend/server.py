@@ -11,7 +11,7 @@ from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
     CSVLoader,
-    Docx2txtLoader
+    Docx2txtLoader,
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -27,9 +27,9 @@ app = FastAPI()
 
 # Initialize the Redis client
 redis_client = redis.Redis(
-    host=os.getenv("RQ_HOST", "redis"), 
-    port=int(os.getenv("RQ_PORT", 6379)), 
-    decode_responses=True
+    host=os.getenv("RQ_HOST", "redis"),
+    port=int(os.getenv("RQ_PORT", 6379)),
+    decode_responses=True,
 )
 
 # Allow Next.js frontend to interact with FastAPI
@@ -54,49 +54,77 @@ class ChatRequest(BaseModel):
     query: str
 
 @app.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
-    session_id = str(uuid.uuid4())
-    
-    # Extract file extension to determine the correct LangChain loader
-    file_extension = file.filename.split(".")[-1].lower()
-    
-    # Save file temporarily to disk using the correct extension
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        # Route to the appropriate loader based on file extension
-        if file_extension == "pdf":
-            loader = PyPDFLoader(tmp_path)
-        elif file_extension in ["txt", "md"]:
-            loader = TextLoader(tmp_path, encoding="utf-8")
-        elif file_extension == "csv":
-            loader = CSVLoader(tmp_path, encoding="utf-8")
-        elif file_extension == "docx":
-            loader = Docx2txtLoader(tmp_path)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file format: {file_extension}")
-
-        docs = loader.load()
-        
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=200)
-        chunks = splitter.split_documents(docs)
-
-        # Upload embeddings directly to the user's isolated namespace
-        PineconeVectorStore.from_documents(
-            documents=chunks,
-            embedding=embeddings,
-            index_name=os.getenv("PINECONE_INDEX_NAME"),
-            pinecone_api_key=os.getenv("PINECONE_API_KEY"),
-            namespace=session_id,
+async def upload_documents(files: list[UploadFile] = File(...)):
+    # 1. Enforce MAX_UPLOAD_FILES constraint from .env
+    max_files = int(os.getenv("MAX_UPLOAD_FILES", 5))
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded.")
+    if len(files) > max_files:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Upload limit exceeded. Maximum allowed is {max_files} files, but received {len(files)}."
         )
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
 
-    return {"session_id": session_id, "total_chunks": len(chunks)}
+    session_id = str(uuid.uuid4())
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=200)
+    all_chunks = []
+    processed_filenames = []
+
+    # 2. Iterate through each uploaded document
+    for file in files:
+        file_extension = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            # Route to loader
+            if file_extension == "pdf":
+                loader = PyPDFLoader(tmp_path)
+            elif file_extension in ["txt", "md"]:
+                loader = TextLoader(tmp_path, encoding="utf-8")
+            elif file_extension == "csv":
+                loader = CSVLoader(tmp_path, encoding="utf-8")
+            elif file_extension == "docx":
+                loader = Docx2txtLoader(tmp_path)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported format for file: {file.filename}")
+
+            docs = loader.load()
+
+            # 3. Explicitly tag original filename and clean metadata before splitting
+            for doc in docs:
+                doc.metadata["filename"] = file.filename
+                doc.metadata["source"] = file.filename  # Overrides temporary disk path
+
+            chunks = splitter.split_documents(docs)
+            all_chunks.extend(chunks)
+            processed_filenames.append(file.filename)
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    if not all_chunks:
+        raise HTTPException(status_code=400, detail="No readable text extracted from uploaded files.")
+
+    # 4. Ingest all chunks across all files into the single isolated session namespace
+    PineconeVectorStore.from_documents(
+        documents=all_chunks,
+        embedding=embeddings,
+        index_name=os.getenv("PINECONE_INDEX_NAME"),
+        pinecone_api_key=os.getenv("PINECONE_API_KEY"),
+        namespace=session_id,
+    )
+
+    return {
+        "session_id": session_id,
+        "total_files": len(processed_filenames),
+        "total_chunks": len(all_chunks),
+        "filenames": processed_filenames,
+    }
 
 @app.post("/chat")
 def chat(payload: ChatRequest):
@@ -126,7 +154,6 @@ def logout_and_cleanup(session_id: str):
 
     # 2. Wipe the conversational memory associated with this session from Redis
     try:
-        # LangChain's RedisChatMessageHistory uses the "message_store:" prefix by default
         redis_client.delete(f"message_store:{session_id}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete Redis chat history: {str(e)}")

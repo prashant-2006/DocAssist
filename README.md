@@ -6,12 +6,13 @@ The architecture is built for concurrent multi-user environments. It utilizes Re
 
 ## 🚀 Features
 
-- **Multi-Format Support:** Ingests PDF, DOCX, TXT, Markdown, and CSV files dynamically.
-- **Isolated User Sessions:** Every uploaded document is assigned a unique session ID and embedded into an isolated Pinecone namespace.
+- **Multi-File Workspaces:** Ingest multiple PDF, DOCX, TXT, Markdown, and CSV files simultaneously into a single session (upload limit configurable via `.env`).
+- **Precision Citations:** AI responses automatically append source tracking, citing the exact filename and page number for every retrieved fact.
+- **Isolated User Sessions:** Every uploaded document batch is assigned a unique session ID and embedded into an isolated Pinecone namespace.
 - **Stateful Conversational Memory:** Maintains chat history context across stateless parallel workers using Redis. Employs a sliding memory window so the AI remembers previous questions and answers during your active session.
 - **True Parallel Processing:** Employs RQ (Redis Queue) and multiple background workers to process simultaneous queries from different users without blocking the main API thread.
 - **Auto-Teardown:** Ending a session automatically triggers a backend cleanup, purging the user's isolated vector embeddings from Pinecone and wiping the chat history from Redis to maintain privacy and save storage.
-- **Premium Glassmorphism UI:** Fluid, 60fps animations, intelligent auto-scrolling, beautiful markdown rendering, and responsive frosted-glass aesthetics.
+- **Premium Glassmorphism UI:** Fluid, 60fps animations, intelligent auto-scrolling, beautiful markdown rendering, dynamic multi-file selection, and responsive frosted-glass aesthetics.
 
 ## 🛠️ Tech Stack
 
@@ -24,7 +25,7 @@ The architecture is built for concurrent multi-user environments. It utilizes Re
 - Python 3.11 & FastAPI
 - LangChain & Pinecone (Vector Database)
 - Google Generative AI Embeddings (Gemini-embedding-001)
-- OpenAI SDK (Routing to Gemini 3.5 Flash-Lite)
+- OpenAI SDK (Routing to configurable Gemini models, e.g., Gemini 3.8 Flash)
 - Redis & RQ (Task Queuing, Background Workers, & Session Memory)
 - Docker Compose (Container Orchestration)
 
@@ -52,27 +53,32 @@ cd docassist
 Create a `.env` file in your **root folder** (alongside `docker-compose.yml`) and add the following variables:
 
 ```env
-# AI & Vector DB API Keys
+# Gemini config
 GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.8-flash
+
+# Pinecone config
 PINECONE_API_KEY=your_pinecone_api_key_here
-PINECONE_INDEX_NAME=your_pinecone_index_name
+PINECONE_INDEX_NAME=docassist
 
 # FastAPI Server config
 FASTAPI_HOST=0.0.0.0
 FASTAPI_PORT=8000
 
 # Redis/RQ config
-# Note: Keep RQ_HOST=redis if using Docker. Change to 127.0.0.1 if running manually.
+# Note: Keep RQ_HOST=redis if using Docker. Change to 127.0.0.1 if running manually. Keep RQ_PORT=6379 if using Docker. Change to 6380 if running manually.
 RQ_HOST=redis
 RQ_PORT=6379
 
-# Chat Memory Config
-# Defines how many past user-AI interactions the bot remembers for context
+# App config
 CHAT_MEMORY_WINDOW=3
+MAX_UPLOAD_FILES=5
 ```
 
-> **🧠 How Memory Configuration Works:**
-> The `CHAT_MEMORY_WINDOW` defines the sliding window of conversational memory. A value of `3` means the AI will remember the last 3 questions you asked and its last 3 answers (6 messages total). This prevents context-window token overflow while keeping the AI aware of the current conversation thread.
+> **⚙️ Configuration Details:**
+> * **`GEMINI_MODEL`**: Specifies the exact LLM version to use for chat processing.
+> * **`MAX_UPLOAD_FILES`**: Sets the strict limit on how many documents a user can upload into a single RAG workspace at once to prevent API rate limiting.
+> * **`CHAT_MEMORY_WINDOW`**: Defines the sliding window of conversational memory. A value of `3` means the AI remembers the last 3 questions and answers (6 messages total), preventing token overflow while maintaining conversational context.
 
 ---
 
